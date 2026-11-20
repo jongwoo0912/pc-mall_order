@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="ko">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>주문서 작성</title>
+	<link rel="stylesheet" href="/pc-products/style.css">
+</head>
+<body>
+<main>
+	<header>
+		<h1>주문서 작성</h1>
+		<div class="nav">
+			<a class="btn" href="/cart">장바구니로</a>
+		</div>
+	</header>
+
+	<div class="notice">결제는 진행되지 않습니다. 주문을 확정하면 주문 내용만 저장됩니다.</div>
+
+	<div class="card" style="margin-bottom:16px">
+		<table>
+			<thead>
+			<tr>
+				<th>제품명</th>
+				<th class="num">단가</th>
+				<th class="num">수량</th>
+				<th class="num">소계</th>
+			</tr>
+			</thead>
+			<tbody id="rows">
+			<tr><td colspan="4" class="empty">불러오는 중…</td></tr>
+			</tbody>
+			<tfoot id="foot" hidden>
+			<tr>
+				<td colspan="3">총금액</td>
+				<td class="num" id="totalPrice"></td>
+			</tr>
+			</tfoot>
+		</table>
+	</div>
+
+	<form id="form" class="card" novalidate hidden>
+		<div class="field">
+			<label for="formName">받는 분 이름 <span class="req">*</span></label>
+			<input type="text" id="formName" name="formName" maxlength="50" autocomplete="name" required>
+			<div class="error" data-for="formName"></div>
+		</div>
+
+		<div class="field">
+			<label for="formMail">받는 분 메일 <span class="req">*</span></label>
+			<input type="email" id="formMail" name="formMail" maxlength="100" autocomplete="email" required>
+			<div class="error" data-for="formMail"></div>
+		</div>
+
+		<div class="field">
+			<label for="formMsg">받는 분 정보 <span class="req">*</span></label>
+			<textarea id="formMsg" name="formMsg" maxlength="1000" required
+				placeholder="배송 주소, 연락처, 요청 사항 등"></textarea>
+			<div class="hint">최대 1000자</div>
+			<div class="error" data-for="formMsg"></div>
+		</div>
+
+		<div class="error" id="formError"></div>
+
+		<div class="actions">
+			<a class="btn" href="/cart">취소</a>
+			<button type="submit" class="btn btn-primary" id="submit">주문 확정</button>
+		</div>
+	</form>
+</main>
+
+<script src="/customers/auth.js"></script>
+<script>
+	const form = document.getElementById('form');
+	const submit = document.getElementById('submit');
+	const formError = document.getElementById('formError');
+	const rows = document.getElementById('rows');
+	const MAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+	const won = n => new Intl.NumberFormat('ko-KR').format(n) + '원';
+
+	function cell(text, className) {
+		const td = document.createElement('td');
+		td.textContent = text ?? '';
+		if (className) td.className = className;
+		return td;
+	}
+
+	function message(text, linkHref, linkText) {
+		rows.innerHTML = '';
+		const tr = document.createElement('tr');
+		const td = cell(text + ' ', 'empty');
+		td.colSpan = 4;
+		if (linkHref) {
+			const a = document.createElement('a');
+			a.href = linkHref;
+			a.textContent = linkText;
+			td.appendChild(a);
+		}
+		tr.appendChild(td);
+		rows.appendChild(tr);
+	}
+
+	function renderSummary(cart) {
+		if (cart.items.length === 0) {
+			message('장바구니가 비어 있어 주문할 수 없습니다.', '/', '제품 보러 가기');
+			form.hidden = true;
+			return false;
+		}
+		rows.innerHTML = '';
+		for (const item of cart.items) {
+			const tr = document.createElement('tr');
+			tr.append(cell(item.name), cell(won(item.price), 'num'),
+				cell(item.quantity + '개', 'num'), cell(won(item.subtotal), 'num'));
+			rows.appendChild(tr);
+		}
+		document.getElementById('totalPrice').textContent = won(cart.totalPrice);
+		document.getElementById('foot').hidden = false;
+		form.hidden = false;
+		return true;
+	}
+
+	async function loadCart() {
+		const res = await fetch('/api/cart', { cache: 'no-store' });
+		if (res.status === 401) {
+			Auth.goLogin();
+			return null;
+		}
+		if (!res.ok) throw new Error(res.status);
+		return res.json();
+	}
+
+	function setError(field, msg) {
+		form.querySelector(`.error[data-for="${field}"]`).textContent = msg || '';
+	}
+
+	function validate(body) {
+		let ok = true;
+		if (!body.formName) { setError('formName', '받는 분 이름을 입력하세요.'); ok = false; }
+		if (!MAIL_RE.test(body.formMail)) { setError('formMail', '올바른 메일 주소를 입력하세요.'); ok = false; }
+		if (!body.formMsg) { setError('formMsg', '배송 주소 등 받는 분 정보를 입력하세요.'); ok = false; }
+		return ok;
+	}
+
+	form.addEventListener('submit', async (e) => {
+		e.preventDefault();
+		form.querySelectorAll('.error').forEach(el => el.textContent = '');
+
+		const body = {
+			formName: form.formName.value.trim(),
+			formMail: form.formMail.value.trim(),
+			formMsg: form.formMsg.value.trim()
+		};
+		if (!validate(body)) return;
+
+		submit.disabled = true;
+		submit.textContent = '주문 중…';
+		try {
+			const res = await fetch('/api/orders', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(body)
+			});
+			if (res.status === 401) {
+				Auth.goLogin();
+				return;
+			}
+			if (res.status === 409) {
+				formError.textContent = '장바구니에 판매가 중단된 제품이 있습니다. 장바구니를 확인하세요.';
+				return;
+			}
+			if (!res.ok) {
+				formError.textContent = res.status === 400
+					? '입력값 또는 장바구니를 확인하세요.'
+					: `주문에 실패했습니다. (${res.status})`;
+				return;
+			}
+			const order = await res.json();
+			location.href = '/orders?done=' + encodeURIComponent(order.id);
+		} catch {
+			formError.textContent = '서버에 연결할 수 없습니다.';
+		} finally {
+			submit.disabled = false;
+			submit.textContent = '주문 확정';
+		}
+	});
+
+	(async () => {
+		try {
+			const [cart, user] = await Promise.all([loadCart(), Auth.me().catch(() => null)]);
+			if (!cart || !renderSummary(cart)) return;
+			// 받는 분 기본값: 주문하는 회원 본인
+			if (user) {
+				form.formName.value = user.name;
+				form.formMail.value = user.mail;
+			}
+			form.formMsg.focus();
+		} catch {
+			message('장바구니를 불러오지 못했습니다.');
+		}
+	})();
+</script>
+</body>
+</html>

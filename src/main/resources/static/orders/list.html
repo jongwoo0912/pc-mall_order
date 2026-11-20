@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="ko">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>주문 내역</title>
+	<link rel="stylesheet" href="/pc-products/style.css">
+</head>
+<body>
+<main>
+	<header>
+		<h1>주문 내역</h1>
+		<div class="nav">
+			<a class="btn" href="/">목록</a>
+			<span id="authNav" class="nav"></span>
+		</div>
+	</header>
+
+	<div class="notice" id="notice" hidden></div>
+	<div id="orders"><div class="card empty">불러오는 중…</div></div>
+</main>
+
+<script src="/customers/auth.js"></script>
+<script>
+	Auth.renderNav(document.getElementById('authNav'));
+
+	const params = new URLSearchParams(location.search);
+	const ordersEl = document.getElementById('orders');
+	const won = n => new Intl.NumberFormat('ko-KR').format(n) + '원';
+
+	if (params.get('done')) {
+		const notice = document.getElementById('notice');
+		notice.textContent = `주문이 완료되었습니다. (주문번호 ${params.get('done')}) 결제는 진행되지 않았습니다.`;
+		notice.hidden = false;
+	}
+
+	function el(tag, text, className) {
+		const e = document.createElement(tag);
+		if (text != null) e.textContent = text;
+		if (className) e.className = className;
+		return e;
+	}
+
+	/** "2026-11-20T14:03:12.123" → "2026-11-20 14:03" */
+	function formatDate(s) {
+		return s ? s.replace('T', ' ').slice(0, 16) : '';
+	}
+
+	function renderOrder(o) {
+		const card = el('section', null, 'card order');
+
+		const head = el('div', null, 'order-head');
+		head.append(el('strong', `주문번호 ${o.id}`),
+			el('span', formatDate(o.orderDate), 'muted'),
+			el('strong', `총금액 ${won(o.totalPrice)}`));
+
+		const recipient = el('div', null, 'recipient');
+		recipient.append(
+			el('div', `받는 분: ${o.formName} (${o.formMail})`),
+			el('div', o.formMsg, 'msg muted'));
+
+		const table = el('table');
+		const thead = el('thead');
+		const htr = el('tr');
+		htr.append(el('th', '제품명'), el('th', '수량', 'num'));
+		thead.appendChild(htr);
+		const tbody = el('tbody');
+		for (const line of o.orderLines) {
+			const tr = el('tr');
+			tr.append(el('td', line.productName), el('td', line.quantity + '개', 'num'));
+			tbody.appendChild(tr);
+		}
+		table.append(thead, tbody);
+
+		card.append(head, recipient, table);
+		return card;
+	}
+
+	fetch('/api/orders', { cache: 'no-store' })
+		.then(res => {
+			if (res.status === 401) {
+				Auth.goLogin();
+				return null;
+			}
+			if (!res.ok) throw new Error(res.status);
+			return res.json();
+		})
+		.then(orders => {
+			if (!orders) return;
+			ordersEl.innerHTML = '';
+			if (orders.length === 0) {
+				ordersEl.appendChild(el('div', '주문 내역이 없습니다.', 'card empty'));
+				return;
+			}
+			orders.forEach(o => ordersEl.appendChild(renderOrder(o)));
+		})
+		.catch(() => {
+			ordersEl.innerHTML = '';
+			ordersEl.appendChild(el('div', '주문 내역을 불러오지 못했습니다.', 'card empty'));
+		});
+</script>
+</body>
+</html>

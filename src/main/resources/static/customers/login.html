@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="ko">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>로그인</title>
+	<link rel="stylesheet" href="/pc-products/style.css">
+</head>
+<body>
+<main class="narrow">
+	<header>
+		<h1>로그인</h1>
+	</header>
+
+	<div class="notice" id="notice" hidden></div>
+
+	<!-- POST /api/customers/login (JSON: mail, password) -->
+	<form id="form" class="card" novalidate>
+		<div class="field">
+			<label for="mail">메일 주소</label>
+			<input type="email" id="mail" name="mail" maxlength="100" autocomplete="username" required autofocus>
+		</div>
+
+		<div class="field">
+			<label for="password">비밀번호</label>
+			<input type="password" id="password" name="password" maxlength="64" autocomplete="current-password" required>
+		</div>
+
+		<div class="error" id="formError"></div>
+
+		<div class="actions">
+			<a class="btn" href="/signup">회원가입</a>
+			<button type="submit" class="btn btn-primary" id="submit">로그인</button>
+		</div>
+	</form>
+</main>
+
+<script src="/customers/auth.js"></script>
+<script>
+	const params = new URLSearchParams(location.search);
+	const notice = document.getElementById('notice');
+	const formError = document.getElementById('formError');
+	const submit = document.getElementById('submit');
+
+	const form = document.getElementById('form');
+
+	// 로그인 후 이동할 곳: 같은 사이트의 경로만 허용 (외부 사이트로의 redirect 방지)
+	function nextUrl() {
+		const next = params.get('next');
+		return next && next.startsWith('/') && !next.startsWith('//') ? next : '/';
+	}
+
+	form.addEventListener('submit', async (e) => {
+		e.preventDefault();
+		formError.textContent = '';
+
+		const body = { mail: form.mail.value.trim(), password: form.password.value };
+		if (!body.mail || !body.password) {
+			formError.textContent = '메일 주소와 비밀번호를 입력하세요.';
+			return;
+		}
+
+		submit.disabled = true;
+		submit.textContent = '로그인 중…';
+		try {
+			const res = await fetch('/api/customers/login', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(body)
+			});
+			if (res.status === 401) {
+				formError.textContent = '메일 주소 또는 비밀번호가 올바르지 않습니다.';
+				form.password.value = '';
+				form.password.focus();
+				return;
+			}
+			if (!res.ok) {
+				formError.textContent = `로그인에 실패했습니다. (${res.status})`;
+				return;
+			}
+			location.href = nextUrl();
+		} catch {
+			formError.textContent = '서버에 연결할 수 없습니다.';
+		} finally {
+			submit.disabled = false;
+			submit.textContent = '로그인';
+		}
+	});
+
+	if (params.has('signup')) {
+		notice.textContent = '회원가입이 완료되었습니다. 로그인하세요.';
+		notice.hidden = false;
+	}
+	if (params.get('mail')) {
+		document.getElementById('mail').value = params.get('mail');
+		document.getElementById('password').focus();
+	}
+</script>
+</body>
+</html>

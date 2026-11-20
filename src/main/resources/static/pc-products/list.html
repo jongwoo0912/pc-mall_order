@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="ko">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>중고 노트북 목록</title>
+	<link rel="stylesheet" href="/pc-products/style.css">
+</head>
+<body>
+<main>
+	<header>
+		<h1>중고 노트북 목록</h1>
+		<div class="nav">
+			<span id="authNav"></span>
+			<a class="btn btn-primary" id="addBtn" href="/api/pc-products/add" hidden>노트북 추가</a>
+		</div>
+	</header>
+
+	<div class="notice" id="notice" hidden></div>
+
+	<div class="card">
+		<table>
+			<thead>
+			<tr>
+				<th>이미지</th>
+				<th>제품명</th>
+				<th>종류</th>
+				<th class="num">가격</th>
+				<th class="hide-sm">설명</th>
+				<th></th>
+			</tr>
+			</thead>
+			<tbody id="rows">
+			<tr><td colspan="6" class="empty">불러오는 중…</td></tr>
+			</tbody>
+		</table>
+	</div>
+</main>
+
+<script src="/customers/auth.js"></script>
+<script>
+	const authNav = document.getElementById('authNav');
+	authNav.className = 'nav';
+	// '노트북 추가' 버튼은 관리자에게만 표시
+	let currentUser = null;
+	Auth.renderNav(authNav).then(user => {
+		currentUser = user;
+		document.getElementById('addBtn').hidden = !Auth.isAdmin(user);
+	});
+
+	const notice = document.getElementById('notice');
+
+	function showNotice(text, linkHref, linkText) {
+		notice.textContent = text + ' ';
+		if (linkHref) {
+			const a = document.createElement('a');
+			a.href = linkHref;
+			a.textContent = linkText;
+			notice.appendChild(a);
+		}
+		notice.hidden = false;
+	}
+
+	/** 장바구니 담기 (비로그인이면 로그인 화면으로) */
+	async function addToCart(product, btn) {
+		if (!currentUser) {
+			Auth.goLogin();
+			return;
+		}
+		btn.disabled = true;
+		try {
+			const res = await fetch('/api/cart/items', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ productId: product.id, quantity: 1 })
+			});
+			if (res.status === 401) {
+				Auth.goLogin();
+				return;
+			}
+			if (!res.ok) throw new Error(res.status);
+			const cart = await res.json();
+			showNotice(`'${product.name}'을(를) 장바구니에 담았습니다. (총 ${cart.totalQuantity}개)`,
+				'/cart', '장바구니 보기');
+		} catch {
+			showNotice('장바구니에 담지 못했습니다.');
+		} finally {
+			btn.disabled = false;
+		}
+	}
+
+	const rows = document.getElementById('rows');
+	const won = new Intl.NumberFormat('ko-KR');
+
+	function cell(text, className) {
+		const td = document.createElement('td');
+		td.textContent = text ?? '';
+		if (className) td.className = className;
+		return td;
+	}
+
+	function message(text) {
+		rows.innerHTML = '';
+		const tr = document.createElement('tr');
+		const td = cell(text, 'empty');
+		td.colSpan = 6;
+		tr.appendChild(td);
+		rows.appendChild(tr);
+	}
+
+	fetch('/api/pc-products')
+		.then(res => {
+			if (!res.ok) throw new Error(res.status);
+			return res.json();
+		})
+		.then(products => {
+			if (products.length === 0) {
+				message('등록된 노트북이 없습니다.');
+				return;
+			}
+			rows.innerHTML = '';
+			for (const p of products) {
+				const tr = document.createElement('tr');
+
+				const imgTd = document.createElement('td');
+				if (p.picSUrl) {
+					const img = document.createElement('img');
+					img.className = 'thumb';
+					img.src = p.picSUrl;
+					img.alt = p.name;
+					imgTd.appendChild(img);
+				} else {
+					const ph = document.createElement('div');
+					ph.className = 'thumb';
+					imgTd.appendChild(ph);
+				}
+
+				const cartTd = document.createElement('td');
+				cartTd.className = 'num';
+				const cartBtn = document.createElement('button');
+				cartBtn.type = 'button';
+				cartBtn.className = 'btn';
+				cartBtn.textContent = '담기';
+				cartBtn.addEventListener('click', () => addToCart(p, cartBtn));
+				cartTd.appendChild(cartBtn);
+
+				tr.append(
+					imgTd,
+					cell(p.name),
+					cell(p.kind),
+					cell(won.format(p.price) + '원', 'num'),
+					cell(p.text, 'hide-sm'),
+					cartTd);
+				rows.appendChild(tr);
+			}
+		})
+		.catch(() => message('목록을 불러오지 못했습니다.'));
+</script>
+</body>
+</html>

@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="ko">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>회원가입</title>
+	<link rel="stylesheet" href="/pc-products/style.css">
+</head>
+<body>
+<main class="narrow">
+	<header>
+		<h1>회원가입</h1>
+	</header>
+
+	<form id="form" class="card" novalidate>
+		<div class="field">
+			<label for="name">이름 <span class="req">*</span></label>
+			<input type="text" id="name" name="name" maxlength="50" autocomplete="name" required>
+			<div class="error" data-for="name"></div>
+		</div>
+
+		<div class="field">
+			<label for="mail">메일 주소 <span class="req">*</span></label>
+			<input type="email" id="mail" name="mail" maxlength="100" autocomplete="email" required>
+			<div class="hint">로그인 아이디로 사용됩니다.</div>
+			<div class="error" data-for="mail"></div>
+		</div>
+
+		<div class="row">
+			<div class="field">
+				<label for="password">비밀번호 <span class="req">*</span></label>
+				<input type="password" id="password" name="password" minlength="8" maxlength="64" autocomplete="new-password" required>
+				<div class="hint">8~64자</div>
+				<div class="error" data-for="password"></div>
+			</div>
+			<div class="field">
+				<label for="password2">비밀번호 확인 <span class="req">*</span></label>
+				<input type="password" id="password2" minlength="8" maxlength="64" autocomplete="new-password" required>
+				<div class="error" data-for="password2"></div>
+			</div>
+		</div>
+
+		<div class="error" id="formError"></div>
+
+		<div class="actions">
+			<a class="btn" href="/login">로그인으로</a>
+			<button type="submit" class="btn btn-primary" id="submit">가입</button>
+		</div>
+	</form>
+</main>
+
+<script src="/customers/auth.js"></script>
+<script>
+	const form = document.getElementById('form');
+	const submit = document.getElementById('submit');
+	const formError = document.getElementById('formError');
+	const MAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+	function setError(field, msg) {
+		form.querySelector(`.error[data-for="${field}"]`).textContent = msg || '';
+	}
+
+	function validate(body, password2) {
+		let ok = true;
+		if (!body.name) { setError('name', '이름을 입력하세요.'); ok = false; }
+		if (!MAIL_RE.test(body.mail)) { setError('mail', '올바른 메일 주소를 입력하세요.'); ok = false; }
+		if (body.password.length < 8 || body.password.length > 64) {
+			setError('password', '비밀번호는 8~64자여야 합니다.'); ok = false;
+		}
+		if (body.password !== password2) { setError('password2', '비밀번호가 일치하지 않습니다.'); ok = false; }
+		return ok;
+	}
+
+	form.addEventListener('submit', async (e) => {
+		e.preventDefault();
+		form.querySelectorAll('.error').forEach(el => el.textContent = '');
+
+		const body = {
+			name: form.name.value.trim(),
+			mail: form.mail.value.trim(),
+			password: form.password.value
+		};
+		if (!validate(body, form.password2.value)) return;
+
+		submit.disabled = true;
+		submit.textContent = '가입 중…';
+		try {
+			const res = await fetch('/api/customers', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(body)
+			});
+			if (res.status === 409) {
+				setError('mail', '이미 가입된 메일 주소입니다.');
+				return;
+			}
+			if (!res.ok) {
+				formError.textContent = res.status === 400
+					? '입력값을 확인하세요.'
+					: `가입에 실패했습니다. (${res.status})`;
+				return;
+			}
+			const created = await res.json();
+			location.href = '/login?signup&mail=' + encodeURIComponent(created.mail);
+		} catch {
+			formError.textContent = '서버에 연결할 수 없습니다.';
+		} finally {
+			submit.disabled = false;
+			submit.textContent = '가입';
+		}
+	});
+</script>
+</body>
+</html>

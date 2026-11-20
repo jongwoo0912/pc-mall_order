@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="ko">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>장바구니</title>
+	<link rel="stylesheet" href="/pc-products/style.css">
+</head>
+<body>
+<main>
+	<header>
+		<h1>장바구니</h1>
+		<div class="nav">
+			<a class="btn" href="/">목록</a>
+			<span id="authNav" class="nav"></span>
+		</div>
+	</header>
+
+	<div class="error" id="pageError"></div>
+
+	<div class="card">
+		<table>
+			<thead>
+			<tr>
+				<th>이미지</th>
+				<th>제품명</th>
+				<th class="num">단가</th>
+				<th class="num">수량</th>
+				<th class="num">소계</th>
+				<th></th>
+			</tr>
+			</thead>
+			<tbody id="rows">
+			<tr><td colspan="6" class="empty">불러오는 중…</td></tr>
+			</tbody>
+			<tfoot id="foot" hidden>
+			<tr>
+				<td colspan="3">합계</td>
+				<td class="num" id="totalQty"></td>
+				<td class="num" id="totalPrice"></td>
+				<td></td>
+			</tr>
+			</tfoot>
+		</table>
+
+		<div class="actions">
+			<button type="button" class="btn" id="clearBtn" hidden>비우기</button>
+			<a class="btn" href="/">계속 쇼핑하기</a>
+			<a class="btn btn-primary" id="orderBtn" href="/order" hidden>주문하기</a>
+		</div>
+	</div>
+</main>
+
+<script src="/customers/auth.js"></script>
+<script>
+	Auth.renderNav(document.getElementById('authNav'));
+
+	const rows = document.getElementById('rows');
+	const foot = document.getElementById('foot');
+	const pageError = document.getElementById('pageError');
+	const orderBtn = document.getElementById('orderBtn');
+	const clearBtn = document.getElementById('clearBtn');
+	const won = n => new Intl.NumberFormat('ko-KR').format(n) + '원';
+
+	function cell(text, className) {
+		const td = document.createElement('td');
+		td.textContent = text ?? '';
+		if (className) td.className = className;
+		return td;
+	}
+
+	function message(text) {
+		rows.innerHTML = '';
+		const tr = document.createElement('tr');
+		const td = cell(text, 'empty');
+		td.colSpan = 6;
+		tr.appendChild(td);
+		rows.appendChild(tr);
+	}
+
+	function render(cart) {
+		const empty = cart.items.length === 0;
+		foot.hidden = empty;
+		orderBtn.hidden = empty;
+		clearBtn.hidden = empty;
+		if (empty) {
+			message('장바구니가 비어 있습니다.');
+			return;
+		}
+		rows.innerHTML = '';
+		for (const item of cart.items) {
+			const tr = document.createElement('tr');
+
+			const imgTd = document.createElement('td');
+			const thumb = document.createElement(item.picSUrl ? 'img' : 'div');
+			thumb.className = 'thumb';
+			if (item.picSUrl) {
+				thumb.src = item.picSUrl;
+				thumb.alt = item.name;
+			}
+			imgTd.appendChild(thumb);
+
+			const qtyTd = document.createElement('td');
+			qtyTd.className = 'num';
+			const qty = document.createElement('input');
+			qty.type = 'number';
+			qty.className = 'qty';
+			qty.min = 1;
+			qty.max = 99;
+			qty.value = item.quantity;
+			qty.setAttribute('aria-label', `${item.name} 수량`);
+			qty.addEventListener('change', () => {
+				const n = Number(qty.value);
+				if (!Number.isInteger(n) || n < 1 || n > 99) {
+					pageError.textContent = '수량은 1~99 사이로 입력하세요.';
+					qty.value = item.quantity;
+					return;
+				}
+				send(`/api/cart/items/${item.productId}`, 'PUT', { quantity: n });
+			});
+			qtyTd.appendChild(qty);
+
+			const delTd = document.createElement('td');
+			delTd.className = 'num';
+			const del = document.createElement('button');
+			del.type = 'button';
+			del.className = 'btn';
+			del.textContent = '삭제';
+			del.addEventListener('click', () => send(`/api/cart/items/${item.productId}`, 'DELETE'));
+			delTd.appendChild(del);
+
+			tr.append(imgTd, cell(item.name), cell(won(item.price), 'num'), qtyTd,
+				cell(won(item.subtotal), 'num'), delTd);
+			rows.appendChild(tr);
+		}
+		document.getElementById('totalQty').textContent = cart.totalQuantity + '개';
+		document.getElementById('totalPrice').textContent = won(cart.totalPrice);
+	}
+
+	/** 장바구니 API 호출 후 응답(변경된 장바구니)으로 다시 그림 */
+	async function send(url, method = 'GET', body) {
+		pageError.textContent = '';
+		try {
+			const res = await fetch(url, {
+				method,
+				cache: 'no-store',
+				headers: body ? { 'Content-Type': 'application/json' } : {},
+				body: body ? JSON.stringify(body) : undefined
+			});
+			if (res.status === 401) {
+				Auth.goLogin();
+				return;
+			}
+			if (!res.ok) throw new Error(res.status);
+			render(await res.json());
+		} catch {
+			pageError.textContent = '장바구니를 처리하지 못했습니다. 다시 시도하세요.';
+		}
+	}
+
+	clearBtn.addEventListener('click', () => {
+		if (confirm('장바구니를 비울까요?')) send('/api/cart', 'DELETE');
+	});
+
+	send('/api/cart');
+</script>
+</body>
+</html>

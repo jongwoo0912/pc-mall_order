@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="ko">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>노트북 추가</title>
+	<link rel="stylesheet" href="/pc-products/style.css">
+</head>
+<body>
+<main>
+	<header>
+		<h1>노트북 추가</h1>
+	</header>
+
+	<form id="form" class="card" novalidate>
+		<div class="field">
+			<label for="name">제품명 <span class="req">*</span></label>
+			<input type="text" id="name" name="name" maxlength="200" placeholder="ThinkPad X1" required>
+			<div class="error" data-for="name"></div>
+		</div>
+
+		<div class="row">
+			<div class="field">
+				<label for="price">가격(원) <span class="req">*</span></label>
+				<input type="number" id="price" name="price" min="0" step="1000" placeholder="650000" required>
+				<div class="error" data-for="price"></div>
+			</div>
+			<div class="field">
+				<label for="kind">종류 <span class="req">*</span></label>
+				<input type="text" id="kind" name="kind" maxlength="50" list="kinds" placeholder="business" required>
+				<datalist id="kinds">
+					<option value="business">
+					<option value="gaming">
+					<option value="ultrabook">
+					<option value="workstation">
+					<option value="chromebook">
+				</datalist>
+				<div class="error" data-for="kind"></div>
+			</div>
+		</div>
+
+		<div class="field">
+			<label for="text">설명</label>
+			<textarea id="text" name="text" maxlength="4000" placeholder="2022년식"></textarea>
+			<div class="error" data-for="text"></div>
+		</div>
+
+		<div class="row">
+			<div class="field">
+				<label for="picS">작은 이미지</label>
+				<input type="file" id="picS" accept="image/*">
+				<div class="hint">선택 사항, 최대 10MB</div>
+			</div>
+			<div class="field">
+				<label for="picL">큰 이미지</label>
+				<input type="file" id="picL" accept="image/*">
+				<div class="hint">선택 사항, 최대 10MB</div>
+			</div>
+		</div>
+
+		<div class="error" id="formError"></div>
+
+		<div class="actions">
+			<a class="btn" href="/">취소</a>
+			<button type="submit" class="btn btn-primary" id="submit">추가</button>
+		</div>
+	</form>
+</main>
+
+<script src="/customers/auth.js"></script>
+<script>
+	const form = document.getElementById('form');
+	const submit = document.getElementById('submit');
+	const formError = document.getElementById('formError');
+	const MAX_FILE = 10 * 1024 * 1024;
+
+	function setError(field, msg) {
+		form.querySelector(`.error[data-for="${field}"]`).textContent = msg || '';
+	}
+
+	function clearErrors() {
+		form.querySelectorAll('.error').forEach(e => e.textContent = '');
+	}
+
+	function validate(body) {
+		let ok = true;
+		if (!body.name) { setError('name', '제품명을 입력하세요.'); ok = false; }
+		if (body.price === null || Number.isNaN(body.price)) { setError('price', '가격을 입력하세요.'); ok = false; }
+		else if (body.price < 0) { setError('price', '가격은 0 이상이어야 합니다.'); ok = false; }
+		if (!body.kind) { setError('kind', '종류를 입력하세요.'); ok = false; }
+		for (const id of ['picS', 'picL']) {
+			const f = document.getElementById(id).files[0];
+			if (f && f.size > MAX_FILE) { formError.textContent = '이미지는 10MB 이하만 올릴 수 있습니다.'; ok = false; }
+		}
+		return ok;
+	}
+
+	async function uploadImage(id, path, inputId) {
+		const file = document.getElementById(inputId).files[0];
+		if (!file) return;
+		const data = new FormData();
+		data.append('file', file);
+		const res = await fetch(`/api/pc-products/${id}/${path}`, { method: 'PUT', body: data });
+		if (!res.ok) throw new Error('image');
+	}
+
+	form.addEventListener('submit', async (e) => {
+		e.preventDefault();
+		clearErrors();
+
+		const priceRaw = form.price.value.trim();
+		const body = {
+			name: form.name.value.trim(),
+			price: priceRaw === '' ? null : Number(priceRaw),
+			kind: form.kind.value.trim(),
+			text: form.text.value.trim()
+		};
+		if (!validate(body)) return;
+
+		submit.disabled = true;
+		submit.textContent = '저장 중…';
+		try {
+			const res = await fetch('/api/pc-products', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(body)
+			});
+			if (res.status === 401 || res.status === 403) {
+				// 세션 만료 등: 다시 로그인
+				location.href = '/login?next=' + encodeURIComponent('/api/pc-products/add');
+				return;
+			}
+			if (!res.ok) {
+				formError.textContent = res.status === 400
+					? '입력값을 확인하세요.'
+					: `저장에 실패했습니다. (${res.status})`;
+				return;
+			}
+			const created = await res.json();
+
+			try {
+				await uploadImage(created.id, 'pic-s', 'picS');
+				await uploadImage(created.id, 'pic-l', 'picL');
+			} catch {
+				alert('노트북은 추가됐지만 이미지 업로드에 실패했습니다.');
+			}
+			location.href = '/';
+		} catch {
+			formError.textContent = '서버에 연결할 수 없습니다.';
+		} finally {
+			submit.disabled = false;
+			submit.textContent = '추가';
+		}
+	});
+</script>
+</body>
+</html>
